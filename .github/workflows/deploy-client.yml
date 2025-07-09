@@ -17,8 +17,8 @@ on:
       - 'turbo.json'
 
 env:
-  AWS_REGION: us-east-1
-  S3_BUCKET: your-bucket-name
+  AWS_REGION: ap-south-1
+  S3_BUCKET: games-gaurav
   S3_FOLDER_PREFIX: builds/client
   NODE_VERSION: 18
 
