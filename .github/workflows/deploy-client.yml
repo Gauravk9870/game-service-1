@@ -5,7 +5,7 @@ on:
     branches:
         - main
     paths:
-      - 'apps/game-1-client/**'
+      - 'apps/client/**'
 
 jobs:
   deploy:
