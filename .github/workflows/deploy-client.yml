@@ -2,14 +2,19 @@ name: Build and Deploy Client
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
     paths:
       - 'apps/client/**'
-      
+      - 'packages/**'
+      - 'package.json'
+      - 'turbo.json'
   pull_request:
     branches: [ main ]
     paths:
       - 'apps/client/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'turbo.json'
 
 env:
   # S3 Configuration
@@ -36,13 +41,18 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
+        cache: 'pnpm'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
 
     - name: Install dependencies
-      run: npm ci
+      run: pnpm install --frozen-lockfile
 
     - name: Build client
-      run: npx turbo build --filter=client
+      run: pnpm turbo build --filter=client
 
     - name: Generate build metadata
       id: metadata
