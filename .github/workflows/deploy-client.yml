@@ -17,15 +17,11 @@ on:
       - 'turbo.json'
 
 env:
-  # S3 Configuration
   AWS_REGION: us-east-1
   S3_BUCKET: your-bucket-name
   S3_FOLDER_PREFIX: builds/client
-  
-  # Build Configuration
   NODE_VERSION: 18
-  TURBO_TEAM: your-team
-  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+
 
 jobs:
   build-and-deploy:
@@ -49,7 +45,7 @@ jobs:
         cache: 'pnpm'
 
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --no-frozen-lockfile
 
     - name: Build client
       run: pnpm turbo build --filter=client
