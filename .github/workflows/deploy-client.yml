@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies & build
         run: |
-          cd apps/game-1-client
+          cd apps/client
           pnpm install
           pnpm build
 
