@@ -1,47 +1,110 @@
-name: Deploy Game 1 Client to S3
+name: Build and Deploy Client
 
 on:
   push:
-    branches:
-        - main
-    # paths:
-    #   - 'apps/client/**'
+    branches: [ main ]
+    paths:
+      - 'apps/client/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'turbo.json'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'apps/client/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'turbo.json'
+
+env:
+  # S3 Configuration
+  AWS_REGION: us-east-1
+  S3_BUCKET: your-bucket-name
+  S3_FOLDER_PREFIX: builds/client
+  
+  # Build Configuration
+  NODE_VERSION: 18
+  TURBO_TEAM: your-team
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
 
-      - name: Install PNPM
-        run: npm install -g pnpm
+    - name: Install dependencies
+      run: npm ci
 
-      - name: Install dependencies & build
-        run: |
-          cd apps/client
-          pnpm install
-          pnpm build
+    - name: Build client
+      run: npx turbo build --filter=client
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+    - name: Generate build metadata
+      id: metadata
+      run: |
+        echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "branch_name=$(echo ${GITHUB_REF#refs/heads/} | tr '/' '-')" >> $GITHUB_OUTPUT
+        echo "build_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
 
-      - name: Deploy to S3 (under /game-1)
-        run: |
-          aws s3 sync apps/game-1-client/dist/ s3://your-game-assets/game-1 --delete
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} \
-            --paths "/game-1/*"
+    - name: Create build archive
+      run: |
+        cd apps/client/dist
+        tar -czf ../../../client-build.tar.gz .
+        cd ../../..
+
+    - name: Upload to S3
+      run: |
+        # Create folder structure: builds/client/branch/timestamp-sha-buildnumber/
+        S3_PATH="${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}"
+        
+        # Upload the build archive
+        aws s3 cp client-build.tar.gz s3://${{ env.S3_BUCKET }}/${S3_PATH}/client-build.tar.gz
+        
+        # Upload individual files for direct access
+        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${S3_PATH}/files/ --delete
+        
+        # Create a "latest" symlink for easy access
+        aws s3 cp client-build.tar.gz s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/client-build.tar.gz
+        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/files/ --delete
+
+    - name: Generate deployment summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build**: ${{ steps.metadata.outputs.build_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ steps.metadata.outputs.sha_short }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ steps.metadata.outputs.branch_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: ${{ steps.metadata.outputs.timestamp }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **S3 Path**: \`${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}/\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Latest Path**: \`${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/\`" >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const s3Path = `${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}/`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🚀 **Client Build Deployed**\n\n- **S3 Path**: \`${s3Path}\`\n- **Build**: ${{ steps.metadata.outputs.build_number }}\n- **Commit**: ${{ steps.metadata.outputs.sha_short }}`
+          });
