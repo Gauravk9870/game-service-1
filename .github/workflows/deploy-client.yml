@@ -5,16 +5,11 @@ on:
     branches: [ main ]
     paths:
       - 'apps/client/**'
-      - 'packages/**'
-      - 'package.json'
-      - 'turbo.json'
+      
   pull_request:
     branches: [ main ]
     paths:
       - 'apps/client/**'
-      - 'packages/**'
-      - 'package.json'
-      - 'turbo.json'
 
 env:
   # S3 Configuration
