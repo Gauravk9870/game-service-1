@@ -14,15 +14,15 @@ async function init() {
   // 2. PixiJS Application Init (v8+)
   const app = new Application()
   await app.init({
-    width: 800,
-    height: 600,
+    width: 1000,
+    height: 800,
     backgroundColor: 0x1d1d1d,
     antialias: true,
   })
   document.body.appendChild(app.canvas)
 
   // 3. Title Text
-  const title = new Text('🎮 PixiJS Game Client', {
+   const title = new Text('🎮 PixiJS Game Client v2', {
     fill: '#ffffff',
     fontSize: 32,
   })
