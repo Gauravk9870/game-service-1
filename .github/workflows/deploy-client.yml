@@ -2,7 +2,7 @@ name: Build and Deploy Client
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - 'apps/client/**'
       - 'packages/**'
@@ -19,7 +19,7 @@ on:
 env:
   AWS_REGION: ap-south-1
   S3_BUCKET: games-gaurav
-  S3_FOLDER_PREFIX: builds/client
+  S3_FOLDER: fruit-blast
   NODE_VERSION: 18
 
 
@@ -50,14 +50,6 @@ jobs:
     - name: Build client
       run: pnpm turbo build --filter=client
 
-    - name: Generate build metadata
-      id: metadata
-      run: |
-        echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
-        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "branch_name=$(echo ${GITHUB_REF#refs/heads/} | tr '/' '-')" >> $GITHUB_OUTPUT
-        echo "build_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -65,47 +57,11 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Create build archive
-      run: |
-        cd apps/client/dist
-        tar -czf ../../../client-build.tar.gz .
-        cd ../../..
-
     - name: Upload to S3
       run: |
-        # Create folder structure: builds/client/branch/timestamp-sha-buildnumber/
-        S3_PATH="${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}"
-        
-        # Upload the build archive
-        aws s3 cp client-build.tar.gz s3://${{ env.S3_BUCKET }}/${S3_PATH}/client-build.tar.gz
-        
-        # Upload individual files for direct access
-        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${S3_PATH}/files/ --delete
-        
-        # Create a "latest" symlink for easy access
-        aws s3 cp client-build.tar.gz s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/client-build.tar.gz
-        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/files/ --delete
+        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/ --delete
 
-    - name: Generate deployment summary
+    - name: Deployment Summary
       run: |
         echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build**: ${{ steps.metadata.outputs.build_number }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: ${{ steps.metadata.outputs.sha_short }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branch**: ${{ steps.metadata.outputs.branch_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Timestamp**: ${{ steps.metadata.outputs.timestamp }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **S3 Path**: \`${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}/\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Latest Path**: \`${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/latest/\`" >> $GITHUB_STEP_SUMMARY
-
-    - name: Comment on PR (if applicable)
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const s3Path = `${{ env.S3_FOLDER_PREFIX }}/${{ steps.metadata.outputs.branch_name }}/${{ steps.metadata.outputs.timestamp }}-${{ steps.metadata.outputs.sha_short }}-${{ steps.metadata.outputs.build_number }}/`;
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: `🚀 **Client Build Deployed**\n\n- **S3 Path**: \`${s3Path}\`\n- **Build**: ${{ steps.metadata.outputs.build_number }}\n- **Commit**: ${{ steps.metadata.outputs.sha_short }}`
-          });
+        echo "- **S3 Path**: \`${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/\`" >> $GITHUB_STEP_SUMMARY
