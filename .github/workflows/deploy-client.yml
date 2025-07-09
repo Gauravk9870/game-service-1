@@ -1,0 +1,45 @@
+name: Deploy Game 1 Client to S3
+
+on:
+  push:
+    paths:
+      - 'apps/game-1-client/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install PNPM
+        run: npm install -g pnpm
+
+      - name: Install dependencies & build
+        run: |
+          cd apps/game-1-client
+          pnpm install
+          pnpm build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Deploy to S3 (under /game-1)
+        run: |
+          aws s3 sync apps/game-1-client/dist/ s3://your-game-assets/game-1 --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} \
+            --paths "/game-1/*"
