@@ -22,7 +22,7 @@ async function init() {
   document.body.appendChild(app.canvas)
 
   // 3. Title Text
-   const title = new Text('🎮 PixiJS Game Client v3', {
+   const title = new Text('🎮 PixiJS Game Client v4', {
     fill: '#ffffff',
     fontSize: 32,
   })
