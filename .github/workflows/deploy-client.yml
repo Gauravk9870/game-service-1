@@ -23,62 +23,107 @@ env:
   NODE_VERSION: 18
   CLOUDFRONT_DISTRIBUTION_ID: E3KOZ0WTSBRTAH
 
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: 🧾 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: 8
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'pnpm'
+      - name: 🧰 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
-    - name: Install dependencies
-      run: pnpm install --no-frozen-lockfile
+      - name: 📥 Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
-    - name: Build client
-      run: pnpm turbo build --filter=client
+      - name: 🛠️ Build client
+        run: pnpm turbo build --filter=client
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: 🔐 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: ☁️ Upload index.html with no-cache
-      run: |
-        aws s3 cp apps/client/dist/index.html s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/index.html \
-          --content-type text/html \
-          --cache-control "no-store"
+      - name: ☁️ Upload index.html with no-store cache
+        run: |
+          aws s3 cp apps/client/dist/index.html s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/index.html \
+            --content-type text/html \
+            --cache-control "no-store"
 
-    - name: ☁️ Upload other assets with long cache and clean up old files
-      run: |
-        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/ \
-          --exclude "index.html" \
-          --cache-control "public,max-age=31536000,immutable" \
-          --delete
+      - name: ☁️ Upload other assets with correct MIME types and immutable cache
+        run: |
+          upload_with_mime_type() {
+            local pattern="$1"
+            local mime_type="$2"
 
-    - name: 🚀 Invalidate CloudFront cache
-      run: |
-        aws cloudfront create-invalidation \
-          --distribution-id ${{ env.CLOUDFRONT_DISTRIBUTION_ID }} \
-          --paths "/${{ env.S3_FOLDER }}/*"
+            matches=$(find apps/client/dist -type f -name "$pattern")
+            if [[ -n "$matches" ]]; then
+              while IFS= read -r file; do
+                rel_path="${file#apps/client/dist/}"
+                aws s3 cp "$file" "s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/$rel_path" \
+                  --content-type "$mime_type" \
+                  --cache-control "public,max-age=31536000,immutable"
+              done <<< "$matches"
+            fi
+          }
 
-    - name: ✅ Deployment Summary
-      run: |
-        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- **S3 Path**: \`${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **CloudFront**: [View Live](https://d1wtlk5xmpy0nd.cloudfront.net/${{ env.S3_FOLDER }}/)" >> $GITHUB_STEP_SUMMARY
+          # --- Web Assets ---
+          upload_with_mime_type "*.js" "application/javascript"
+          upload_with_mime_type "*.mjs" "application/javascript"
+          upload_with_mime_type "*.css" "text/css"
+          upload_with_mime_type "*.html" "text/html"
+          upload_with_mime_type "*.json" "application/json"
+
+          # --- Images ---
+          upload_with_mime_type "*.png" "image/png"
+          upload_with_mime_type "*.jpg" "image/jpeg"
+          upload_with_mime_type "*.jpeg" "image/jpeg"
+          upload_with_mime_type "*.svg" "image/svg+xml"
+          upload_with_mime_type "*.gif" "image/gif"
+          upload_with_mime_type "*.webp" "image/webp"
+          upload_with_mime_type "*.ico" "image/x-icon"
+
+          # --- Fonts ---
+          upload_with_mime_type "*.woff" "font/woff"
+          upload_with_mime_type "*.woff2" "font/woff2"
+          upload_with_mime_type "*.ttf" "font/ttf"
+          upload_with_mime_type "*.otf" "font/otf"
+          upload_with_mime_type "*.eot" "application/vnd.ms-fontobject"
+
+          # --- Game/Model/WebAssembly ---
+          upload_with_mime_type "*.unity3d" "application/vnd.unity"
+          upload_with_mime_type "*.glb" "model/gltf-binary"
+          upload_with_mime_type "*.gltf" "model/gltf+json"
+          upload_with_mime_type "*.fbx" "application/octet-stream"
+          upload_with_mime_type "*.wasm" "application/wasm"
+
+          # --- Fallback: Upload remaining + cleanup old ---
+          aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/ \
+            --exclude "index.html" \
+            --cache-control "public,max-age=31536000,immutable" \
+            --delete
+
+      - name: 🚀 Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ env.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/${{ env.S3_FOLDER }}/*"
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **S3 Path**: \`${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **CloudFront**: [View Live](https://d1wtlk5xmpy0nd.cloudfront.net/${{ env.S3_FOLDER }}/)" >> $GITHUB_STEP_SUMMARY
