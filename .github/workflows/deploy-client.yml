@@ -21,6 +21,7 @@ env:
   S3_BUCKET: games-gaurav
   S3_FOLDER: fruit-blast
   NODE_VERSION: 18
+  CLOUDFRONT_DISTRIBUTION_ID: E3KOZ0WTSBRTAH
 
 
 jobs:
@@ -57,11 +58,27 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Upload to S3
+    - name: ☁️ Upload index.html with no-cache
       run: |
-        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/ --delete
+        aws s3 cp apps/client/dist/index.html s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/index.html \
+          --content-type text/html \
+          --cache-control "no-store"
 
-    - name: Deployment Summary
+    - name: ☁️ Upload other assets with long cache and clean up old files
+      run: |
+        aws s3 sync apps/client/dist s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/ \
+          --exclude "index.html" \
+          --cache-control "public,max-age=31536000,immutable" \
+          --delete
+
+    - name: 🚀 Invalidate CloudFront cache
+      run: |
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ env.CLOUDFRONT_DISTRIBUTION_ID }} \
+          --paths "/${{ env.S3_FOLDER }}/*"
+
+    - name: ✅ Deployment Summary
       run: |
         echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
         echo "- **S3 Path**: \`${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **CloudFront**: [View Live](https://d1wtlk5xmpy0nd.cloudfront.net/${{ env.S3_FOLDER }}/)" >> $GITHUB_STEP_SUMMARY
